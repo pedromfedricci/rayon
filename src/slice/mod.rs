@@ -13,7 +13,7 @@ mod rchunks;
 mod test;
 
 use self::mergesort::par_mergesort;
-use self::quicksort::par_quicksort;
+use self::quicksort::{par_partition_at_index, par_quicksort};
 use crate::iter::plumbing::*;
 use crate::iter::*;
 use crate::split_producer::*;
@@ -512,6 +512,95 @@ pub trait ParallelSliceMut<T: Send> {
         F: Fn(&T) -> B + Sync,
     {
         par_quicksort(self.as_parallel_slice_mut(), |a, b| f(a).lt(&f(b)));
+    }
+
+    /// # Examples
+    ///
+    /// ```
+    /// use rayon::prelude::*;
+    ///
+    /// let mut v = [-5i32, 4, 1, -3, 2];
+    ///
+    /// // Find the median
+    /// v.par_select_nth_unstable(2);
+    ///
+    /// // We are only guaranteed the slice will be one of the following, based on the way we sort
+    /// // about the specified index.
+    /// assert!(v == [-3, -5, 1, 2, 4] ||
+    ///         v == [-5, -3, 1, 2, 4] ||
+    ///         v == [-3, -5, 1, 4, 2] ||
+    ///         v == [-5, -3, 1, 4, 2]);
+    /// ```
+    #[inline]
+    fn par_select_nth_unstable(&mut self, index: usize) -> (&mut [T], &mut T, &mut [T])
+    where
+        T: Ord + Sync,
+    {
+        let f = |a: &T, b: &T| a.lt(b);
+        par_partition_at_index(self.as_parallel_slice_mut(), index, &f)
+    }
+
+    /// # Examples
+    ///
+    /// ```
+    /// use rayon::prelude::*;
+    ///
+    /// let mut v = [-5i32, 4, 1, -3, 2];
+    ///
+    /// // Find the median as if the slice were sorted in descending order.
+    /// v.par_select_nth_unstable_by(2, |a, b| b.cmp(a));
+    ///
+    /// // We are only guaranteed the slice will be one of the following, based on the way we sort
+    /// // about the specified index.
+    /// assert!(v == [2, 4, 1, -5, -3] ||
+    ///         v == [2, 4, 1, -3, -5] ||
+    ///         v == [4, 2, 1, -5, -3] ||
+    ///         v == [4, 2, 1, -3, -5]);
+    /// ```
+    #[inline]
+    fn par_select_nth_unstable_by<F>(
+        &mut self,
+        index: usize,
+        compare: F,
+    ) -> (&mut [T], &mut T, &mut [T])
+    where
+        T: Sync,
+        F: Fn(&T, &T) -> Ordering + Sync,
+    {
+        let f = |a: &T, b: &T| compare(a, b) == Ordering::Less;
+        par_partition_at_index(self.as_parallel_slice_mut(), index, &f)
+    }
+
+    /// # Examples
+    ///
+    /// ```
+    /// use rayon::prelude::*;
+    ///
+    /// let mut v = [-5i32, 4, 1, -3, 2];
+    ///
+    /// // Return the median as if the array were sorted according to absolute value.
+    /// v.par_select_nth_unstable_by_key(2, |a| a.abs());
+    ///
+    /// // We are only guaranteed the slice will be one of the following, based on the way we sort
+    /// // about the specified index.
+    /// assert!(v == [1, 2, -3, 4, -5] ||
+    ///         v == [1, 2, -3, -5, 4] ||
+    ///         v == [2, 1, -3, 4, -5] ||
+    ///         v == [2, 1, -3, -5, 4]);
+    /// ```
+    #[inline]
+    fn par_select_nth_unstable_by_key<K, F>(
+        &mut self,
+        index: usize,
+        f: F,
+    ) -> (&mut [T], &mut T, &mut [T])
+    where
+        T: Sync,
+        K: Ord,
+        F: Fn(&T) -> K + Sync,
+    {
+        let f = |a: &T, b: &T| f(a).lt(&f(b));
+        par_partition_at_index(self.as_parallel_slice_mut(), index, &f)
     }
 }
 
